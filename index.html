@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sylvaria Face Portal</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Sylvaria Identity Hub</h1>
+  </header>
+
+  <main>
+    <section id="camera-section">
+      <video id="video" autoplay muted></video>
+      <button id="capture-btn">📸 Capture Face</button>
+    </section>
+
+    <section id="user-form">
+      <h2>New User</h2>
+      <input type="text" id="name" placeholder="Name" />
+      <input type="date" id="dob" />
+      <select id="gender">
+        <option value="">Select Gender</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+      </select>
+      <button id="save-user">💾 Save User</button>
+    </section>
+
+    <section id="user-list">
+      <h2>Known Users</h2>
+      <ul id="users"></ul>
+    </section>
+
+    <section id="tools">
+      <button id="scan-users">🔍 Scan for Match</button>
+      <button id="export-data">⬇️ Export Backup</button>
+      <input type="file" id="import-file" />
+      <button id="import-data">⬆️ Import Backup</button>
+    </section>
+
+    <section id="editor">
+      <h2>Edit User</h2>
+      <img id="edit-img" />
+      <input type="text" id="edit-name" />
+      <input type="date" id="edit-dob" />
+      <select id="edit-gender">
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+      </select>
+      <button id="update-user">✅ Update</button>
+    </section>
+  </main>
+
+<style>
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background: #f0f4f8;
+  color: #333;
+  margin: 0;
+  padding: 0;
+}
+
+header {
+  background: #2c3e50;
+  color: white;
+  padding: 1rem;
+  text-align: center;
+}
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+}
+
+section {
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+video {
+  width: 100%;
+  border-radius: 8px;
+}
+
+button {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+input, select {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  font-size: 1rem;
+}
+
+#edit-img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  margin-bottom: 0.5rem;
+}
+</style>
+<script>
+let users = JSON.parse(localStorage.getItem('sylv_users') || '[]');
+let capturedDescriptor = null;
+let selectedUserIndex = null;
+
+const video = document.getElementById('video');
+const captureBtn = document.getElementById('capture-btn');
+const saveUserBtn = document.getElementById('save-user');
+const scanBtn = document.getElementById('scan-users');
+const exportBtn = document.getElementById('export-data');
+const importBtn = document.getElementById('import-data');
+const importFile = document.getElementById('import-file');
+const userList = document.getElementById('users');
+
+const editImg = document.getElementById('edit-img');
+const editName = document.getElementById('edit-name');
+const editDob = document.getElementById('edit-dob');
+const editGender = document.getElementById('edit-gender');
+const updateUserBtn = document.getElementById('update-user');
+
+async function init() {
+  await Promise.all([
+    faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+    faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
+    faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+    faceapi.nets.ageGenderNet.loadFromUri('/models')
+  ]);
+
+  navigator.mediaDevices.getUserMedia({ video: {} }).then(stream => {
+    video.srcObject = stream;
+  });
+
+  renderUsers();
+}
+
+captureBtn.onclick = async () => {
+  const detection = await faceapi
+    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+    .withFaceLandmarks()
+    .withFaceDescriptor()
+    .withAgeAndGender();
+
+  if (!detection) return alert('No face detected.');
+
+  capturedDescriptor = detection.descriptor;
+  document.getElementById('gender').value = detection.gender;
+  alert(`Estimated age: ${Math.round(detection.age)}\nGender: ${detection.gender}`);
+};
+
+saveUserBtn.onclick = () => {
+  const name = document.getElementById('name').value;
+  const dob = document.getElementById('dob').value;
+  const gender = document.getElementById('gender').value;
+
+  if (!capturedDescriptor || !name || !dob || !gender) return alert('Fill all fields and capture face.');
+
+  users.push({
+    name,
+    dob,
+    gender,
+    descriptor: Array.from(capturedDescriptor)
+  });
+
+  localStorage.setItem('sylv_users', JSON.stringify(users));
+  renderUsers();
+};
+
+function renderUsers() {
+  userList.innerHTML = '';
+  users.forEach((u, i) => {
+    const li = document.createElement('li');
+    li.textContent = `${u.name} (${u.gender})`;
+    li.onclick = () => editUser(i);
+    userList.appendChild(li);
+  });
+}
+
+function editUser(index) {
+  selectedUserIndex = index;
+  const user = users[index];
+  editName.value = user.name;
+  editDob.value = user.dob;
+  editGender.value = user.gender;
+  editImg.src = user.image || '';
+}
+
+updateUserBtn.onclick = () => {
+  if (selectedUserIndex === null) return;
+  users[selectedUserIndex].name = editName.value;
+  users[selectedUserIndex].dob = editDob.value;
+  users[selectedUserIndex].gender = editGender.value;
+  localStorage.setItem('sylv_users', JSON.stringify(users));
+  renderUsers();
+};
+
+scanBtn.onclick = async () => {
+  const detection = await faceapi
+    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
+  if (!detection) return alert('No face detected.');
+
+  const queryDescriptor = detection.descriptor;
+  const labeledDescriptors = users.map(u =>
+    new faceapi.LabeledFaceDescriptors(u.name, [new Float32Array(u.descriptor)])
+  );
+
+  const matcher = new faceapi.FaceMatcher(labeledDescriptors);
+  const match = matcher.findBestMatch(queryDescriptor);
+  alert(`Best match: ${match.toString()}`);
+};
+
+exportBtn.onclick = () => {
+  const blob = new Blob([JSON.stringify(users)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sylvaria_users_backup.json';
+  a.click();
+};
+
+importBtn.onclick = () => {
+  const file = importFile.files[0];
+  if (!file) return alert('Choose a file first.');
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      users = JSON.parse(e.target.result);
+      localStorage.setItem('sylv_users', JSON.stringify(users));
+      renderUsers();
+    } catch {
+      alert('Invalid file.');
+    }
+  };
+  reader.readAsText(file);
+};
+
+init();
+</script>
+</body>
+</html>
